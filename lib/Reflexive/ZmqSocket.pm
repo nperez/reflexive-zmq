@@ -11,8 +11,8 @@ use ZeroMQ::Constants qw/
     ZMQ_POLLOUT
 	ZMQ_EVENTS
 /;
-use Reflexive::ZmqError;
-use Reflexive::ZmqMessage;
+use Reflexive::ZmqSocket::ZmqError;
+use Reflexive::ZmqSocket::ZmqMessage;
 
 extends 'Reflex::Base';
 
@@ -55,9 +55,7 @@ has socket => (
         close
         connect
         bind
-    /,
-#   'send',
-    ]
+    /]
 );
 
 sub _build_socket {
@@ -123,98 +121,88 @@ sub send {
     my ($self, $item) = @_;
     $self->enqueue_item($item);
     $self->resume_writing();
-    warn 'enqued item ' . $self->meta->name;
     return $self->buffer_count;
 }
 
 sub zmq_writable {
 	my ($self, $args) = @_;
 
-	MESSAGE: while (1) {
+	while ($self->buffer_count) {
         
-        if($self->buffer_count == 0)
-        {
-            warn 'no buffer, pausing writing ' . $self->meta->name;
-            $self->pause_writing();
-            return;
-        }
-		
         unless($self->getsockopt(ZMQ_EVENTS) & ZMQ_POLLOUT)
         {
-            warn 'Not ready for WRITE? ' . $self->meta->name;
             return;
         }
         
         my $item = $self->dequeue_item;
-        warn 'item dequeued ' . $self->meta->name;
         
-        warn 'sending message ' . $self->meta->name;
-        $! = 0;
         my $ret = $self->socket->send($item);
         if($ret == 0)
         {
-            warn 'successfully sent message ' . $self->meta->name;
-            next MESSAGE;
+            if(my $msg = $self->recv(ZMQ_NOBLOCK)) {
+                $self->emit(
+                    -name => 'message',
+                    -type => 'Reflexive::ZmqSocket::ZmqMessage',
+                    message => $msg,
+                );
+            }
         }
         elsif($ret == -1)
         {
             if($! == EAGAIN)
             {
-                warn 'failed to send. message putback ' . $self->meta->name;
                 $self->putback_item($item);
-                next MESSAGE;
+            }
+            else
+            {
+                last;
             }
         }
+    }
 
-        $self->pause_writing();
-
+    $self->pause_writing();
+    
+    if($! != EAGAIN)
+    {
         $self->emit(
             -name => 'socket_error',
-            -type => 'Reflexive::ZmqError',
+            -type => 'Reflexive::ZmqSocket::ZmqError',
             errnum => ($! + 0),
             errstr => "$!",
             errfun => 'send',
         );
-
-		return;
 	}
 }
 
 sub zmq_readable {
 	my ($self, $args) = @_;
-
-	MESSAGE: while (1) {
+	
+    MESSAGE: while (1) {
         
         unless($self->getsockopt(ZMQ_EVENTS) & ZMQ_POLLIN)
         {
-            warn 'Not ready for READ? ' . $self->meta->name;
             return;
         }
         
-        warn 'attempting to read message ' . $self->meta->name;
 	    if(my $msg = $self->recv(ZMQ_NOBLOCK)) {
-        warn 'got message ' . $self->meta->name;
 			$self->emit(
 				-name => 'message',
-				-type => 'Reflexive::ZmqMessage',
+				-type => 'Reflexive::ZmqSocket::ZmqMessage',
 				message => $msg,
 			);
-            warn 'trying to read more ' . $self->meta->name;
-			next MESSAGE;
+            return;
 		}
 
 		if($! == EAGAIN or $! == EINTR)
         {
-            warn 'got either EAGAIN or EINTR';
-            return ;
+            next MESSSAGE;
         }
         
-        warn 'pausing reading due to error' . $self->meta->name;
 		$self->pause_reading();
 
 		$self->emit(
             -name => 'socket_error',
-            -type => 'Reflexive::ZmqError',
+            -type => 'Reflexive::ZmqSocket::ZmqError',
             errnum => ($! + 0),
             errstr => "$!",
             errfun => 'recv',

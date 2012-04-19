@@ -1,7 +1,7 @@
 package Reflexive::ZmqSocket::RequestSocket;
 use Moose;
 use ZeroMQ::Constants qw/ ZMQ_REQ /;
-use Reflexive::ZmqError;
+use Reflexive::ZmqSocket::ZmqError;
 use Try::Tiny;
 
 extends 'Reflexive::ZmqSocket';
@@ -21,7 +21,7 @@ sub BUILD {
         {
             $self->emit(
                 -name => 'connect_error',
-                -type => 'Reflexive::ZmqError',
+                -type => 'Reflexive::ZmqSocket::ZmqError',
                 errnum => -1,
                 errstr => "Failed to connect to endpoint: $endpoint",
                 errfun => 'connect',

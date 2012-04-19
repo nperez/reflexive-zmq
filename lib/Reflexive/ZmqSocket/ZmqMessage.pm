@@ -1,5 +1,4 @@
-package Reflexive::ZmqMessage;
-
+package Reflexive::ZmqSocket::ZmqMessage;
 use Moose;
 extends 'Reflex::Event';
 

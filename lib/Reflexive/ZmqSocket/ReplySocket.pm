@@ -1,7 +1,7 @@
 package Reflexive::ZmqSocket::ReplySocket;
 use Moose;
 use ZeroMQ::Constants qw/ ZMQ_REP /;
-use Reflexive::ZmqError;
+use Reflexive::ZmqSocket::ZmqError;
 use Try::Tiny;
 
 extends 'Reflexive::ZmqSocket';
@@ -21,7 +21,7 @@ sub BUILD {
         {
             $self->emit(
                 -name => 'bind_error',
-                -type => 'Reflexive::ZmqError',
+                -type => 'Reflexive::ZmqSocket::ZmqError',
                 errnum => -1,
                 errstr => "Failed to bind to endpoint: $endpoint",
                 errfun => 'bind',

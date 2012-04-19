@@ -1,4 +1,4 @@
-package Reflexive::ZmqError;
+package Reflexive::ZmqSocket::ZmqError;
 use Moose;
 
 extends 'Reflex::Event';
