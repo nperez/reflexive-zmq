@@ -1,5 +1,6 @@
 package Reflexive::ZmqSocket;
 use Moose;
+use Moose::Util::TypeConstraints('enum');
 use Try::Tiny;
 use Errno qw(EAGAIN EINTR);
 use ZeroMQ::Context;
@@ -27,6 +28,12 @@ has endpoints => (
         endpoints_count => 'count',
         all_endpoints => 'elements',
     }
+);
+
+has endpoint_action => (
+    is => 'ro',
+    isa => enum([qw/bind connect/]),
+    required => 1,
 );
 
 has active => ( is => 'rw', isa => 'Bool', default => 1 );

@@ -13,9 +13,11 @@ sub BUILD {
 
     foreach my $endpoint ($self->all_endpoints)
     {
+        my $action = $self->endpoint_action;
+        
         try
         {
-            $self->connect($endpoint);
+            $self->$action($endpoint);
         }
         catch
         {
@@ -23,8 +25,8 @@ sub BUILD {
                 -name => 'connect_error',
                 -type => 'Reflexive::ZmqSocket::ZmqError',
                 errnum => -1,
-                errstr => "Failed to connect to endpoint: $endpoint",
-                errfun => 'connect',
+                errstr => "Failed to $action to endpoint: $endpoint",
+                errfun => $action,
             );
         };
     }

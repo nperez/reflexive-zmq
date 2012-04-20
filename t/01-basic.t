@@ -36,8 +36,15 @@ use Test::More;
     sub init {
         my ($self) = @_;
 
-        my $rep = Reflexive::ZmqSocket::ReplySocket->new(endpoints => [ 'tcp://127.0.0.1:54321' ]);
-        my $req = Reflexive::ZmqSocket::RequestSocket->new(endpoints => [ 'tcp://127.0.0.1:54321' ]);
+        my $rep = Reflexive::ZmqSocket::ReplySocket->new(
+            endpoints => [ 'tcp://127.0.0.1:54321' ],
+            endpoint_action => 'connect'
+        );
+
+        my $req = Reflexive::ZmqSocket::RequestSocket->new(
+            endpoints => [ 'tcp://127.0.0.1:54321' ],
+            endpoint_action => 'bind',
+        );
 
         $self->request($req);
         $self->reply($rep);

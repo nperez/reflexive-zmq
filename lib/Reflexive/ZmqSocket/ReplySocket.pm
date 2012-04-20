@@ -13,9 +13,11 @@ sub BUILD {
     
     foreach my $endpoint ($self->all_endpoints)
     {
+        my $action = $self->endpoint_action;
+        
         try
         {
-            $self->bind($endpoint);
+            $self->$action($endpoint);
         }
         catch
         {
@@ -23,8 +25,8 @@ sub BUILD {
                 -name => 'bind_error',
                 -type => 'Reflexive::ZmqSocket::ZmqError',
                 errnum => -1,
-                errstr => "Failed to bind to endpoint: $endpoint",
-                errfun => 'bind',
+                errstr => "Failed to $action to endpoint: $endpoint",
+                errfun => $action,
             );
         };
     }
