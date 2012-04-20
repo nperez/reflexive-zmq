@@ -6,24 +6,27 @@ use Errno qw(EAGAIN EINTR);
 use ZeroMQ::Context;
 use ZeroMQ::Socket;
 use ZeroMQ::Constants qw/
-	ZMQ_FD
+    ZMQ_FD
     ZMQ_NOBLOCK
     ZMQ_POLLIN
     ZMQ_POLLOUT
-	ZMQ_EVENTS
+    ZMQ_EVENTS
+    ZMQ_SNDMORE
+    ZMQ_RCVMORE
 /;
 use Reflexive::ZmqSocket::ZmqError;
 use Reflexive::ZmqSocket::ZmqMessage;
+use Reflexive::ZmqSocket::ZmqMultiPartMessage;
 
 extends 'Reflex::Base';
 
 sub socket_type { die 'This is a virtual method and should never be called' }
 
 has endpoints => (
-	is => 'ro',
-	isa => 'ArrayRef[Str]',
+    is => 'ro',
+    isa => 'ArrayRef[Str]',
     traits => ['Array'],
-	required => 1,
+    required => 1,
     handles => {
         endpoints_count => 'count',
         all_endpoints => 'elements',
@@ -39,9 +42,9 @@ has endpoint_action => (
 has active => ( is => 'rw', isa => 'Bool', default => 1 );
 
 has context => (
-	is => 'ro',
-	isa => 'ZeroMQ::Context',
-	lazy => 1,
+    is => 'ro',
+    isa => 'ZeroMQ::Context',
+    lazy => 1,
     builder => '_build_context',
 );
 
@@ -51,9 +54,9 @@ sub _build_context {
 }
 
 has socket => (
-	is => 'ro',
-	isa => 'ZeroMQ::Socket',
-	lazy => 1,
+    is => 'ro',
+    isa => 'ZeroMQ::Socket',
+    lazy => 1,
     builder => '_build_socket',
     handles => [qw/
         recv
@@ -75,9 +78,9 @@ sub _build_socket {
 }
 
 has filehandle => (
-	is => 'ro',
-	isa => 'FileHandle',
-	lazy => 1,
+    is => 'ro',
+    isa => 'FileHandle',
+    lazy => 1,
     builder => '_build_filehandle',
 );
 
@@ -107,21 +110,21 @@ has buffer => (
 );
 
 with 'Reflex::Role::Readable' => {
-	att_active    => 'active',
-	att_handle    => 'filehandle',
-	cb_ready      => 'zmq_readable',
-	method_pause  => 'pause_reading',
-	method_resume => 'resume_reading',
-	method_stop   => 'stop_reading',
+    att_active    => 'active',
+    att_handle    => 'filehandle',
+    cb_ready      => 'zmq_readable',
+    method_pause  => 'pause_reading',
+    method_resume => 'resume_reading',
+    method_stop   => 'stop_reading',
 };
 
 with 'Reflex::Role::Writable' => {
-	att_active    => 'active',
-	att_handle    => 'filehandle',
-	cb_ready      => 'zmq_writable',
-	method_pause  => 'pause_writing',
-	method_resume => 'resume_writing',
-	method_stop   => 'stop_writing',
+    att_active    => 'active',
+    att_handle    => 'filehandle',
+    cb_ready      => 'zmq_writable',
+    method_pause  => 'pause_writing',
+    method_resume => 'resume_writing',
+    method_stop   => 'stop_writing',
 };
 
 sub send {
@@ -132,9 +135,9 @@ sub send {
 }
 
 sub zmq_writable {
-	my ($self, $args) = @_;
+    my ($self, $args) = @_;
 
-	while ($self->buffer_count) {
+    while ($self->buffer_count) {
         
         unless($self->getsockopt(ZMQ_EVENTS) & ZMQ_POLLOUT)
         {
@@ -142,16 +145,86 @@ sub zmq_writable {
         }
         
         my $item = $self->dequeue_item;
+
+        if(ref($item) eq 'ARRAY')
+        {
+            my $socket = $self->socket;
+
+            my $first_part = shift(@$item);
+            my $ret = $self->socket->send($first_part, ZMQ_SNDMORE);
+            if($ret == 0)
+            {
+                for(0..$#$item)
+                {
+                    my $part = $item->[$_];
+                    if($_ == $#$item)
+                    {
+                        $socket->send($part);
+                        my $rc = $self->do_read();
+
+                        if($rc == -1)
+                        {
+                            $self->pause_reading();
+
+                            $self->emit(
+                                -name => 'socket_error',
+                                -type => 'Reflexive::ZmqSocket::ZmqError',
+                                errnum => ($! + 0),
+                                errstr => "$!",
+                                errfun => 'recv',
+                            );
+                            last;
+                        }
+                        elsif($rc == 0)
+                        {
+                            return;
+                        }
+                        elsif($rc == 1)
+                        {
+                            next;
+                        }
+                    }
+                    else
+                    {
+                        $socket->send($part, ZMQ_SNDMORE);
+                    }
+                }
+            }
+            elsif($ret == -1)
+            {
+                if($! == EAGAIN)
+                {
+                    unshift(@$item, $first_part);
+                    $self->putback_item($item);
+                    next;
+                }
+                else
+                {
+                    last;
+                }
+            }
+        }
         
         my $ret = $self->socket->send($item);
         if($ret == 0)
         {
-            if(my $msg = $self->recv(ZMQ_NOBLOCK)) {
+            my $rc = $self->do_read();
+
+            if($rc == -1)
+            {
+                $self->pause_reading();
+
                 $self->emit(
-                    -name => 'message',
-                    -type => 'Reflexive::ZmqSocket::ZmqMessage',
-                    message => $msg,
+                    -name => 'socket_error',
+                    -type => 'Reflexive::ZmqSocket::ZmqError',
+                    errnum => ($! + 0),
+                    errstr => "$!",
+                    errfun => 'recv',
                 );
+            }
+            elsif($rc == 1)
+            {
+                next;
             }
         }
         elsif($ret == -1)
@@ -178,12 +251,12 @@ sub zmq_writable {
             errstr => "$!",
             errfun => 'send',
         );
-	}
+    }
 }
 
 sub zmq_readable {
-	my ($self, $args) = @_;
-	
+    my ($self, $args) = @_;
+    
     MESSAGE: while (1) {
         
         unless($self->getsockopt(ZMQ_EVENTS) & ZMQ_POLLIN)
@@ -191,32 +264,67 @@ sub zmq_readable {
             return;
         }
         
-	    if(my $msg = $self->recv(ZMQ_NOBLOCK)) {
-			$self->emit(
-				-name => 'message',
-				-type => 'Reflexive::ZmqSocket::ZmqMessage',
-				message => $msg,
-			);
-            return;
-		}
+        my $ret = $self->do_read();
 
-		if($! == EAGAIN or $! == EINTR)
+        if($ret == -1)
         {
-            next MESSSAGE;
+            $self->pause_reading();
+
+            $self->emit(
+                -name => 'socket_error',
+                -type => 'Reflexive::ZmqSocket::ZmqError',
+                errnum => ($! + 0),
+                errstr => "$!",
+                errfun => 'recv',
+            );
         }
-        
-		$self->pause_reading();
+        elsif($ret == 0)
+        {
+            next MESSAGE;
+        }
+        elsif($ret == 1)
+        {
+            return;
+        }
+    }
+}
 
-		$self->emit(
-            -name => 'socket_error',
-            -type => 'Reflexive::ZmqSocket::ZmqError',
-            errnum => ($! + 0),
-            errstr => "$!",
-            errfun => 'recv',
-		);
+sub do_read {
+    my ($self) = @_;
 
-		return;
-	}
+
+    if(my $msg = $self->recv(ZMQ_NOBLOCK)) {
+        if($self->getsockopt(ZMQ_RCVMORE))
+        {
+            my $messages = [$msg];
+            
+            do
+            {
+                push(@$messages, $self->recv());
+            }
+            while ($self->getsockopt(ZMQ_RCVMORE));
+
+            $self->emit(
+                -name => 'multipart_message',
+                -type => 'Reflexive::ZmqSocket::ZmqMultiPartMessage',
+                message => $messages
+            );
+            return 1;
+        }
+        $self->emit(
+            -name => 'message',
+            -type => 'Reflexive::ZmqSocket::ZmqMessage',
+            message => $msg,
+        );
+        return 1;
+    }
+
+    if($! == EAGAIN or $! == EINTR)
+    {
+        return 0;
+    }
+
+    return -1;
 }
 
 __PACKAGE__->meta->make_immutable();

@@ -23,7 +23,7 @@ use Test::More;
         predicate => 'has_reply',
     );
     
-    for(qw/ping pong/)
+    for(qw/ping pong pang pung/)
     {
         has "$_"  => (
             is => 'ro',
@@ -71,30 +71,62 @@ use Test::More;
         $self->reply->send($msg->data + 1);
     }
 
+    sub on_reply_multipart_message {
+        my ($self, $msg) = @_;
+        if($msg->count_parts == 3)
+        {
+            my @parts = map { $_->data } $msg->all_parts;
+            Test::More::is_deeply(\@parts, [1,2,3], 'Multipart request is in order');
+            $self->toggle_pang;
+            $self->reply->send([3,2,1]);
+        }
+    }
+
     sub on_request_message {
         my ($self, $msg) = @_;
         $self->toggle_pong;
-        $self->clear;
+        $self->request->send([1, 2, 3]);
+    }
+
+    sub on_request_multipart_message {
+        my ($self, $msg) = @_;
+        if($msg->count_parts == 3)
+        {
+            my @parts = map { $_->data } $msg->all_parts;
+            Test::More::is_deeply(\@parts, [3,2,1], 'Multipart response is in order');
+            $self->toggle_pung;
+            $self->clear;
+        }
     }
 
     sub on_reply_socket_error {
         my ($self, $msg) = @_;
-        BAIL('There should never be a socket error');
+        Test::More::BAIL_OUT("There should never be a reply socket error: \n" . $msg->dump);
     }
 
     sub on_request_socket_error {
         my ($self, $msg) = @_;
-        BAIL('There should never be a socket error');
+        Test::More::BAIL_OUT("There should never be a request socket error: \n" . $msg->dump);
     }
 
     sub on_reply_bind_error {
         my ($self, $msg) = @_;
-        BAIL('There should never be a socket error');
+        Test::More::BAIL_OUT("There should never be a reply bind socket error: \n" . $msg->dump);
+    }
+
+    sub on_reply_connect_error {
+        my ($self, $msg) = @_;
+        Test::More::BAIL_OUT("There should never be a reply connect socket error: \n" . $msg->dump);
     }
 
     sub on_request_connect_error {
         my ($self, $msg) = @_;
-        BAIL('There should never be a socket error');
+        Test::More::BAIL_OUT("There should never be a request connect socket error: \n" . $msg->dump);
+    }
+
+    sub on_request_bind_error {
+        my ($self, $msg) = @_;
+        Test::More::BAIL_OUT("There should never be a request bind socket error: \n" . $msg->dump);
     }
 
     __PACKAGE__->meta->make_immutable();
@@ -106,6 +138,8 @@ $app->run_all();
 
 ok($app->ping, 'Successfully set ping');
 ok($app->pong, 'Successfully set pong');
+ok($app->pang, 'Successfully set pang');
+ok($app->pung, 'Successfully set pung');
 
 done_testing();
 
