@@ -13,6 +13,15 @@ use ZeroMQ::Constants qw/
     ZMQ_EVENTS
     ZMQ_SNDMORE
     ZMQ_RCVMORE
+    ZMQ_PUSH
+    ZMQ_PULL
+    ZMQ_PUB
+    ZMQ_SUB
+    ZMQ_REQ
+    ZMQ_REP
+    ZMQ_DEALER
+    ZMQ_ROUTER
+    ZMQ_PAIR
 /;
 use Reflexive::ZmqSocket::ZmqError;
 use Reflexive::ZmqSocket::ZmqMessage;
@@ -20,7 +29,14 @@ use Reflexive::ZmqSocket::ZmqMultiPartMessage;
 
 extends 'Reflex::Base';
 
-sub socket_type { die 'This is a virtual method and should never be called' }
+has socket_type => (
+    is => 'ro',
+    isa => enum([ZMQ_REP, ZMQ_REQ, ZMQ_DEALER, ZMQ_ROUTER, ZMQ_PUB, ZMQ_SUB, ZMQ_PUSH, ZMQ_PULL, ZMQ_PAIR]),
+    lazy => 1,
+    builder => '_build_socket_type',
+);
+
+sub _build_socket_type { die 'This is a virtual method and should never be called' }
 
 has endpoints => (
     is => 'ro',
@@ -126,6 +142,30 @@ with 'Reflex::Role::Writable' => {
     method_resume => 'resume_writing',
     method_stop   => 'stop_writing',
 };
+
+sub BUILD {
+    my ($self) = @_;
+
+    foreach my $endpoint ($self->all_endpoints)
+    {
+        my $action = $self->endpoint_action;
+        
+        try
+        {
+            $self->$action($endpoint);
+        }
+        catch
+        {
+            $self->emit(
+                -name => 'connect_error',
+                -type => 'Reflexive::ZmqSocket::ZmqError',
+                errnum => -1,
+                errstr => "Failed to $action to endpoint: $endpoint",
+                errfun => $action,
+            );
+        };
+    }
+}
 
 sub send {
     my ($self, $item) = @_;

@@ -1,36 +1,10 @@
 package Reflexive::ZmqSocket::ReplySocket;
 use Moose;
 use ZeroMQ::Constants qw/ ZMQ_REP /;
-use Reflexive::ZmqSocket::ZmqError;
-use Try::Tiny;
 
 extends 'Reflexive::ZmqSocket';
 
-sub socket_type { +ZMQ_REP }
-
-sub BUILD {
-    my ($self) = @_;
-    
-    foreach my $endpoint ($self->all_endpoints)
-    {
-        my $action = $self->endpoint_action;
-        
-        try
-        {
-            $self->$action($endpoint);
-        }
-        catch
-        {
-            $self->emit(
-                -name => 'bind_error',
-                -type => 'Reflexive::ZmqSocket::ZmqError',
-                errnum => -1,
-                errstr => "Failed to $action to endpoint: $endpoint",
-                errfun => $action,
-            );
-        };
-    }
-}
+sub _build_socket_type { +ZMQ_REP }
 
 __PACKAGE__->meta->make_immutable();
 
