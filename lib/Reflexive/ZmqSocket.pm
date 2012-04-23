@@ -42,7 +42,7 @@ has endpoints => (
     is => 'ro',
     isa => 'ArrayRef[Str]',
     traits => ['Array'],
-    required => 1,
+    predicate => 'has_endpoints',
     handles => {
         endpoints_count => 'count',
         all_endpoints => 'elements',
@@ -52,7 +52,7 @@ has endpoints => (
 has endpoint_action => (
     is => 'ro',
     isa => enum([qw/bind connect/]),
-    required => 1,
+    predicate => 'has_endpoint_action',
 );
 
 has active => ( is => 'rw', isa => 'Bool', default => 1 );
@@ -83,6 +83,16 @@ has socket => (
         bind
     /]
 );
+
+after [qw/bind connect/] => sub {
+    my ($self) = @_;
+    $self->resume_reading() unless $self->active;
+};
+
+after close => sub {
+    my ($self) = @_;
+    $self->stop_reading if $self->active;
+};
 
 sub _build_socket {
     my ($self) = @_;
@@ -145,6 +155,21 @@ with 'Reflex::Role::Writable' => {
 
 sub BUILD {
     my ($self) = @_;
+
+    if($self->active)
+    {
+        $self->initialize_endpoints();
+    }
+}
+
+sub initialize_endpoints {
+    my ($self) = @_;
+    
+    die 'No endpoint_action defined when attempting to intialize endpoints'
+        unless $self->has_endpoint_action;
+
+    die 'No endpoints defind when attempting to initialize endpoints'
+        unless $self->has_endpoints && $self->endpoints_count > 0;
 
     foreach my $endpoint ($self->all_endpoints)
     {
