@@ -55,6 +55,12 @@ has endpoint_action => (
     predicate => 'has_endpoint_action',
 );
 
+has socket_options => (
+    is => 'ro',
+    isa => 'HashRef',
+    default => sub { +{} },
+);
+
 has active => ( is => 'rw', isa => 'Bool', default => 1 );
 
 has context => (
@@ -97,10 +103,19 @@ after close => sub {
 sub _build_socket {
     my ($self) = @_;
 
-    return ZeroMQ::Socket->new(
+    my $socket = ZeroMQ::Socket->new(
         $self->context(),
         $self->socket_type(),
     );
+    
+    my $opts = $self->socket_options;
+
+    foreach my $key (keys %$opts)
+    {
+        $socket->setsockopt($key, $opts->{$key});
+    }
+
+    return $socket;
 }
 
 has filehandle => (

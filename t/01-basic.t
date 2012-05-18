@@ -10,6 +10,7 @@ use Test::More;
     use Reflex::Trait::Watched qw/ watches /;
     use Reflexive::ZmqSocket::ReplySocket;
     use Reflexive::ZmqSocket::RequestSocket;
+    use ZeroMQ::Constants(':all');
 
     watches request => (
         isa => 'Reflexive::ZmqSocket::RequestSocket',
@@ -39,12 +40,18 @@ use Test::More;
 
         my $rep = Reflexive::ZmqSocket::ReplySocket->new(
             endpoints => [ 'tcp://127.0.0.1:54321' ],
-            endpoint_action => 'connect'
+            endpoint_action => 'connect',
+            socket_options => {
+                +ZMQ_LINGER ,=> 1,
+            },
         );
 
         my $req = Reflexive::ZmqSocket::RequestSocket->new(
             endpoints => [ 'tcp://127.0.0.1:54321' ],
             endpoint_action => 'bind',
+            socket_options => {
+                +ZMQ_LINGER ,=> 1,
+            },
         );
 
         $self->request($req);
