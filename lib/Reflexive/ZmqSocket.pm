@@ -317,6 +317,10 @@ sub zmq_writable {
             errfun => 'send',
         );
     }
+    else
+    {
+        $self->emit(-name => 'socket_flushed');
+    }
 }
 
 sub zmq_readable {

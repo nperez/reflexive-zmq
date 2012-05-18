@@ -29,6 +29,7 @@ use Test::More;
             is => 'ro',
             isa => 'Bool',
             traits => ['Bool'],
+            default => 0,
             handles => { "toggle_$_" => 'toggle' },
         );
     }
@@ -67,6 +68,7 @@ use Test::More;
 
     sub on_reply_message {
         my ($self, $msg) = @_;
+        return if $self->ping;
         $self->toggle_ping;
         $self->reply->send($msg->data + 1);
     }
@@ -95,7 +97,23 @@ use Test::More;
             my @parts = map { $_->data } $msg->all_parts;
             Test::More::is_deeply(\@parts, [3,2,1], 'Multipart response is in order');
             $self->toggle_pung;
-            $self->clear;
+            $self->request->send(2);
+        }
+    }
+
+    sub on_request_socket_flushed {
+        my ($self) = @_;
+        if($self->pung)
+        {
+            $self->clear();
+        }
+    }
+    
+    sub on_reply_socket_flushed {
+        my ($self) = @_;
+        if($self->pung)
+        {
+            $self->clear();
         }
     }
 
