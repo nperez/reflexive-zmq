@@ -1,4 +1,6 @@
 Revision history for {{ $dist->name }}: {{ $dist->version }}
 
 {{ $NEXT }}
+
+1.121730  2012-06-21 13:22:36 Europe/Amsterdam
         Initial Release
