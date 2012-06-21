@@ -1,4 +1,7 @@
 package Reflexive::ZmqSocket;
+
+#ABSTRACT: Provides a reflexy way to talk over ZeroMQ sockets
+
 use Moose;
 use Moose::Util::TypeConstraints('enum');
 use Try::Tiny;
@@ -29,14 +32,39 @@ use Reflexive::ZmqSocket::ZmqMultiPartMessage;
 
 extends 'Reflex::Base';
 
+=attribute_public socket_type
+
+    is: ro, isa: enum, lazy: 1
+
+This attribute holds what type of ZeroMQ socket should be built. It must be one
+of the constants exported by the ZeroMQ::Constants package. The attribute is
+populated by default in the various subclasses.
+
+=cut
+
 has socket_type => (
     is => 'ro',
-    isa => enum([ZMQ_REP, ZMQ_REQ, ZMQ_DEALER, ZMQ_ROUTER, ZMQ_PUB, ZMQ_SUB, ZMQ_PUSH, ZMQ_PULL, ZMQ_PAIR]),
+    isa => enum([ZMQ_REP, ZMQ_REQ, ZMQ_DEALER, ZMQ_ROUTER, ZMQ_PUB, ZMQ_SUB,
+        ZMQ_PUSH, ZMQ_PULL, ZMQ_PAIR]),
     lazy => 1,
     builder => '_build_socket_type',
 );
 
 sub _build_socket_type { die 'This is a virtual method and should never be called' }
+
+=attribute_public endpoints
+
+    is: ro, isa: ArrayRef[Str], traits: Array, predicate: has_endpoints
+
+This attribute holds an array reference of all of the endpoints to which the
+socket should either bind or connect.
+
+The following methods are delegated to this attribute:
+
+    endpoints_count
+    all_endpoints
+
+=cut
 
 has endpoints => (
     is => 'ro',
@@ -49,11 +77,31 @@ has endpoints => (
     }
 );
 
+=attribute_public endpoint_action
+
+    is: ro, isa: enum(bind, connect), predicate: has_endpoint_action
+
+This attribute determines the socket action to take against the provided
+endpoints. While ZeroMQ allows sockets to both connect and bind, this module
+limits it to either/or. Patches welcome :)
+
+=cut
+
 has endpoint_action => (
     is => 'ro',
     isa => enum([qw/bind connect/]),
     predicate => 'has_endpoint_action',
 );
+
+=attribute_public 
+
+    is: ro, isa: HashRef
+
+This attribute has the options for the socket. Options are applied at BUILD
+time but before any action is taken on the end points. This allows for things
+like setting the ZMQ_IDENTITY
+
+=cut
 
 has socket_options => (
     is => 'ro',
@@ -61,7 +109,23 @@ has socket_options => (
     default => sub { +{} },
 );
 
+=attribute_protected active
+
+    is: ro, isa: Bool, default: true
+
+This attribute controls whether the socket is observed or not for reads/writes according to Reflex
+
+=cut
+
 has active => ( is => 'rw', isa => 'Bool', default => 1 );
+
+=attribute_public context
+
+    is: ro, isa: ZeroMQ::Context
+
+This attribute holds the context that is required for building sockets. 
+
+=cut
 
 has context => (
     is => 'ro',
@@ -74,6 +138,22 @@ sub _build_context {
     my ($self) = @_;
     return ZeroMQ::Context->new();
 }
+
+=attribute_public socket
+
+    is: ro, isa: ZeroMQ::Socket
+
+This attribute holds the actual ZeroMQ socket created. The following methods
+are delegated to this attribute:
+
+    recv
+    getsockopt
+    setsockopt
+    close
+    connect
+    bind
+
+=cut
 
 has socket => (
     is => 'ro',
@@ -118,6 +198,16 @@ sub _build_socket {
     return $socket;
 }
 
+=attribute_protected 
+
+    is: ro, isa: FileHandle
+
+This attribute contains a file handle built from the cloned file descriptor
+from inside the ZeroMQ::Socket. This is where the magic happens in how we poll
+for non-blocking IO.
+
+=cut
+
 has filehandle => (
     is => 'ro',
     isa => 'FileHandle',
@@ -136,6 +226,21 @@ sub _build_filehandle {
 
     return $zmq_fh;
 }
+
+=attribute_protected buffer
+
+    is: ro, isa: ArrayRef, traits: Array
+
+Thie attribute is an internal buffer used for non-blocking writes.
+
+The following methods are delegated to this attribute:
+
+    buffer_count
+    dequeue_item
+    enqueue_item
+    putback_item
+
+=cut
 
 has buffer => (
     is => 'ro',
@@ -177,6 +282,17 @@ sub BUILD {
     }
 }
 
+=protected_method initialize_endpoints
+
+This method attempts the defined L</endpoint_action> against the provided
+L</endpoints>. This method is called at BUILD if L</active> is true. To defer
+initialization, simply set L</active> to false.
+
+If the provided action against a particular endpoint fails, a connect_error
+event will be emitted
+
+=cut
+
 sub initialize_endpoints {
     my ($self) = @_;
     
@@ -207,12 +323,27 @@ sub initialize_endpoints {
     }
 }
 
+=method_public send
+
+This method is for sending messages through the L</socket>. It is non-blocking
+and will return the current buffer count.
+
+=cut
+
 sub send {
     my ($self, $item) = @_;
     $self->enqueue_item($item);
     $self->resume_writing();
     return $self->buffer_count;
 }
+
+
+=method_private zmq_writable
+
+This method is used internally to handle when the ZeroMQ socket is ready for
+writing. This method can emit socket_error for various issues.
+
+=cut
 
 sub zmq_writable {
     my ($self, $args) = @_;
@@ -338,6 +469,12 @@ sub zmq_writable {
     }
 }
 
+=method_private zmq_readable
+
+This method is used internally by reflex to actually read from the ZeroMQ socket when it is readable. This method can emit socket_error when problems occur. For successful reads, either message or multipart_message will be emitted.
+
+=cut
+
 sub zmq_readable {
     my ($self, $args) = @_;
     
@@ -373,9 +510,14 @@ sub zmq_readable {
     }
 }
 
+=method_private do_read
+
+This private method does the actual reading from the socket.
+
+=cut
+
 sub do_read {
     my ($self) = @_;
-
 
     if(my $msg = $self->recv(ZMQ_NOBLOCK)) {
         if($self->getsockopt(ZMQ_RCVMORE))
@@ -414,3 +556,89 @@ sub do_read {
 __PACKAGE__->meta->make_immutable();
 
 1;
+__END__
+
+=head1 SYNOPSIS
+
+    package App::Test;
+    use Moose;
+    extends 'Reflex::Base';
+    use Reflex::Trait::Watched qw/ watches /;
+    use Reflexive::ZmqSocket::RequestSocket;
+    use ZeroMQ::Constants(':all');
+
+    watches request => (
+        isa => 'Reflexive::ZmqSocket::RequestSocket',
+        clearer => 'clear_request',
+        predicate => 'has_request',
+    );
+
+    sub init {
+        my ($self) = @_;
+
+        my $req = Reflexive::ZmqSocket::RequestSocket->new(
+            endpoints => [ 'tcp://127.0.0.1:54321' ],
+            endpoint_action => 'bind',
+            socket_options => {
+                +ZMQ_LINGER ,=> 1,
+            },
+        );
+
+        $self->request($req);
+    }
+
+    sub BUILD {
+        my ($self) = @_;
+        
+        $self->init();
+    }
+
+    sub on_request_message {
+        my ($self, $msg) = @_;
+    }
+
+    sub on_request_multipart_message {
+        my ($self, $msg) = @_;
+        my @parts = map { $_->data } $msg->all_parts;
+    }
+
+    sub on_request_socket_flushed {
+        my ($self) = @_;
+    }
+    
+    sub on_request_socket_error {
+        my ($self, $msg) = @_;
+    }
+
+    sub on_request_connect_error {
+        my ($self, $msg) = @_;
+    }
+
+    sub on_request_bind_error {
+        my ($self, $msg) = @_;
+    }
+
+    __PACKAGE__->meta->make_immutable();
+
+=head1 DESCRIPTION
+
+Reflexive::ZmqSocket provides a reflexy way to participate in ZeroMQ driven applications. A number of events are emitted from the instantiated objects of this class and its subclasses. On successful reads, either L</message> or L</multipart_message> is emitted. For errors, L</socket_error> is emitted. See L</EMITTED_EVENTS> for more informations.
+
+=cut
+
+=emitted_event message
+
+message is emitted when a successful read occurs on the socket. When this event is emitted, the payload is a single message (in terms of ZeroMQ this is the result of the other end sending a message wuthout using SNDMORE). See L<Reflexive::ZmqSocket::ZmqMessage> for more information.
+
+=cut
+
+=emitted_event multipart_message
+
+multipart_message is emitted when multipart message is read from the socket.  See L<Reflexive::ZmqSocket::ZmqMultiPartMessage> for more information.
+
+=cut
+
+=head1 ACKNOWLEDGEMENTS
+
+This module was originally developed for Booking.com and through their gracious approval, we've released this module to CPAN.
+
