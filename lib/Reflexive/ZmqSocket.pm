@@ -348,7 +348,7 @@ writing. This method can emit socket_error for various issues.
 sub zmq_writable {
     my ($self, $args) = @_;
 
-    while ($self->buffer_count) {
+    MESSAGE: while ($self->buffer_count) {
         
         unless($self->getsockopt(ZMQ_EVENTS) & ZMQ_POLLOUT)
         {
@@ -384,7 +384,7 @@ sub zmq_writable {
                                 errstr => "$!",
                                 errfun => 'recv',
                             );
-                            last;
+                            last MESSAGE;
                         }
                         elsif($rc == 0)
                         {
@@ -392,7 +392,7 @@ sub zmq_writable {
                         }
                         elsif($rc == 1)
                         {
-                            next;
+                            next MESSAGE;
                         }
                     }
                     else
