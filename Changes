@@ -2,5 +2,9 @@ Revision history for {{ $dist->name }}: {{ $dist->version }}
 
 {{ $NEXT }}
 
+1.130560  2013-02-25 08:38:14 Europe/Amsterdam
+        Fix bug of jumping out of the wrong loop if we end up with a a read
+        while we are writing a multiple frame packet (dgryski)
+
 1.121730  2012-06-21 13:22:36 Europe/Amsterdam
         Initial Release
