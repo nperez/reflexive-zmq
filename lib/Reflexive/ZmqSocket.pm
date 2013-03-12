@@ -290,7 +290,7 @@ sub BUILD {
     }
 }
 
-=protected_method initialize_endpoints
+=method_protected initialize_endpoints
 
 This method attempts the defined L</endpoint_action> against the provided
 L</endpoints>. This method is called at BUILD if L</active> is true. To defer
