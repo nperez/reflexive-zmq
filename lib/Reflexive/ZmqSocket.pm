@@ -153,6 +153,10 @@ are delegated to this attribute:
     connect
     bind
 
+NOTE: close() is advised to stop polling the zmq_fd /before/ the call to the
+underlying zmq_close. This means that items in the L</buffer> may not be sent
+or owned by zmq and you are responsible for managing these items.
+
 =cut
 
 has socket => (
@@ -175,9 +179,13 @@ after [qw/bind connect/] => sub {
     $self->resume_reading() unless $self->active;
 };
 
-after close => sub {
+before close => sub {
     my ($self) = @_;
-    $self->stop_reading if $self->active;
+    if($self->active)
+    {
+        $self->stop_reading;
+        $self->stop_writing;
+    }
 };
 
 sub _build_socket {
